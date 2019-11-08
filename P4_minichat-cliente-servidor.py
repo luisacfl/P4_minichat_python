@@ -43,6 +43,8 @@ def RunClient(serverIP):
     if usuario == '':
         usuario = 'Guest'+str(random.randint(1000,9999))
         print('Tu nombre de usuario es:'+usuario)
+    #Imprimir el menu
+    print('Ingresa alguna de las siguientes opciones:\n(1)Enviar mensaje público\n(2)Ver usuarios conectados\n(3)Enviar mensaje privado\n(4)Salir del chat')
     #envía el nombre al socket del servidor
     s.sendto(usuario.encode('utf-8'), server)
     #constructor del hilo que recibe mensajes de otros clientes
@@ -51,16 +53,29 @@ def RunClient(serverIP):
     threading.Thread(target=ReceiveData, args=(s,)).start()
     while True:
         #recibe el mensaje
-        data = input()
+        print('Ingresa opción del menu')
+        opcion = input()
         #salir del ciclo
-        if data == 'salir':
+        data = usuario
+        if opcion == '1' or opcion=='3':
+            print('Ingresa mensaje: ')
+            mensaje = input()
+            data = data+'$'+mensaje     #envía los datos al servidor junto con nombre de usuario   
+            if opcion=='3':
+                print('Ingresa usuario: ')
+                recieverUser = input()
+                data = data+'$'+recieverUser
+        elif opcion=='2':
+            data=data+'$'+'get-users'
+        elif opcion=='4':
+            data=data+'$'+'salir'
             break
-        elif data=='':
-            continue
-        data = '['+usuario+']' + '->'+ data
-        #envía los datos al servidor junto con nombre de usuario
+        else:
+            print("ingresa opción válida")
+            continue;
+        
         s.sendto(data.encode('utf-8'),server)
-    #envía ultimo mensaje al servidor ('salir')
+    #envía ultimo mensaje al servidor (al enviar salir)
     s.sendto(data.encode('utf-8'),server)
     #cierra el socket
     s.close()
@@ -86,7 +101,7 @@ def RunServer():
     #declara variable tipo conjunto
     #solo puede tener valores unicos
     #más fácil de saber si una dirección esta contenida en el conjunto
-    clients = set()
+    clients = {}
     #Clase de colas sincronizada, utlilizada para manejar los hilos
     recvPackets = queue.Queue()
 
@@ -100,25 +115,41 @@ def RunServer():
         while not recvPackets.empty():
             #obtener un hilo de la cola
             data,addr = recvPackets.get()
+            #obtiene nombre del usuario
+            data = data.decode('utf-8')
+            data = data.split("$")
             #si el cliente es nuevo solo lo agrega a la lista de clientes
-            if addr not in clients:
-                clients.add(addr)
-                print("first client"+addr)
+            if addr not in clients.values():
+                #guarda direccion y nombre de usr en un diccionario
+                clients.setdefault(data[0], addr)
                 continue
             #si no, recibe también sus datos
-            clients.add(addr)
-            data = data.decode('utf-8')
+            clients.setdefault(data[0], addr)
             #si el cliente envía salir, se elimina de la lista de clientes
-            if data.endswith('salir'):
-                clients.remove(addr)
+            if data[1].endswith('salir'):
+                mensaje = data[0]+' ha abandonado la sala.'
+                for c in clients:
+                    if clients.get(c)!=addr:
+                        s.sendto(mensaje.encode('utf-8'),clients.get(c))
+                clients.pop(data[0])
+                continue
+            if data[1].endswith('get-users'):
+                for c in clients:
+                    if c!=data[0]:
+                        s.sendto(c.encode('utf-8'),addr)
                 continue
             #imprime la dirección de donde los recibe y los datos que recibe
-            print(str(addr)+data)
+            mensaje = '['+data[0]+']'+'->'+data[1]
+            print(str(addr)+mensaje)
             #para cada cliente diferente de la dirección actual, 
             #envía el mensaje del cliente
-            for c in clients:
-                if c!=addr:
-                    s.sendto(data.encode('utf-8'),c)
+            if len(data)<3:
+                for c in clients:
+                    if clients.get(c)!=addr:
+                        s.sendto(mensaje.encode('utf-8'),clients.get(c))
+            elif len(data)==3:
+                s.sendto(mensaje.encode('utf-8'), clients.get(data[2]))
+                
     s.close()
 #Serevr Code Ends Here
 
@@ -128,5 +159,5 @@ if __name__ == '__main__':
     elif len(sys.argv)==2:
         RunClient(sys.argv[1])
     else:
-        print('Run Serevr:-> python Chat.py')
+        print('Run Server:-> python Chat.py')
         print('Run Client:-> python Chat.py <ServerIP>')
